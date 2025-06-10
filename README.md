@@ -2,7 +2,7 @@
 
 A real-time Bitcoin buy/sell signal web app built with **Python**, **Streamlit**, and **Plotly**, using live price data from [CryptoCompare](https://min-api.cryptocompare.com/). The dashboard uses moving average crossover logic to help you identify potential trading signals.
 
-![Screenshot](preview.png) <!-- Optional: add this image in your repo -->
+<!-- Optional: add this image in your repo -->
 
 ---
 
