@@ -8,7 +8,7 @@ A real-time Bitcoin buy/sell signal web app built with **Python**, **Streamlit**
 
 ## 🚀 Live Demo
 
-👉 [Launch the App](https://btc-signal-dashboard-mjzbtxuq9dkpghrzrwrtru.streamlit.app)
+👉 [Launch the App](https://btc-signal-dashboard-mjzbtqux9dkpghrzrrwtru.streamlit.app/)
 
 ---
 
