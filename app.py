@@ -1,3 +1,5 @@
+from btc_dashboard_logic import calculate_rsi, calculate_macd, log_trade # type: ignore
+
 import streamlit as st
 import requests
 import pandas as pd
