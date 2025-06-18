@@ -251,6 +251,88 @@ if btc_price:
 else:
     st.error("Could not fetch BTC price.")
 
+# Backtest code starts here 👇 (must come BEFORE st.rerun)
+st.markdown("---")
+st.subheader("📊 Backtesting Engine")
+...
+# (All the backtesting logic here)
+
 # Auto-refresh
 time.sleep(refresh_rate)
 st.rerun()
+
+
+if st.button("Run Backtest (last 7 days of 1h candles)"):
+    with st.spinner("Fetching historical data..."):
+        url = "https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=USD&limit=168"
+        try:
+            hist_response = requests.get(url)
+            hist_data = hist_response.json()["Data"]["Data"]
+            df_hist = pd.DataFrame(hist_data)
+            df_hist["time"] = pd.to_datetime(df_hist["time"], unit="s")
+            df_hist.set_index("time", inplace=True)
+            df_hist["short_ma"] = df_hist["close"].rolling(short_window).mean()
+            df_hist["long_ma"] = df_hist["close"].rolling(long_window).mean()
+
+            trades = []
+            position = None
+
+            for i in range(1, len(df_hist)):
+                price = df_hist["close"].iloc[i]
+                time_i = df_hist.index[i]
+                short = df_hist["short_ma"].iloc[i]
+                long = df_hist["long_ma"].iloc[i]
+
+                signal = None
+                if short > long and df_hist["short_ma"].iloc[i - 1] <= df_hist["long_ma"].iloc[i - 1]:
+                    signal = "BUY"
+                elif short < long and df_hist["short_ma"].iloc[i - 1] >= df_hist["long_ma"].iloc[i - 1]:
+                    signal = "SELL"
+
+                # Simulate position entry
+                if signal and position is None:
+                    position = {
+                        "side": signal,
+                        "entry_price": price,
+                        "entry_time": time_i
+                    }
+
+                # Simulate SL/TP-based exit
+                if position:
+                    entry = position["entry_price"]
+                    side = position["side"]
+                    change_pct = ((price - entry) / entry) * 100 if side == "BUY" else ((entry - price) / entry) * 100
+
+                    if change_pct <= -stop_loss_pct or change_pct >= take_profit_pct:
+                        trades.append({
+                            "Side": side,
+                            "Entry": round(entry, 2),
+                            "Exit": round(price, 2),
+                            "PnL (%)": round(change_pct, 2),
+                            "Open Time": position["entry_time"],
+                            "Close Time": time_i
+                        })
+                        position = None
+
+            if trades:
+                df_trades = pd.DataFrame(trades)
+                st.success(f"Backtest Complete: {len(df_trades)} trades")
+                st.dataframe(df_trades, use_container_width=True)
+
+                total_pnl = df_trades["PnL (%)"].sum()
+                win_rate = (df_trades["PnL (%)"] > 0).mean() * 100
+
+                st.markdown(f"""
+                ### 📈 Backtest Summary
+                - **Total Trades:** {len(df_trades)}
+                - **Total PnL:** `{total_pnl:.2f}%`
+                - **Win Rate:** `{win_rate:.1f}%`
+                """)
+
+                # Optional: CSV download
+                csv = df_trades.to_csv(index=False).encode("utf-8")
+                st.download_button("⬇️ Download Backtest Results", csv, file_name="backtest_results.csv", mime="text/csv")
+            else:
+                st.warning("No trades were executed in the backtest.")
+        except Exception as e:
+            st.error(f"Error fetching historical data: {e}")
