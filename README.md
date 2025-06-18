@@ -60,3 +60,27 @@ This interactive dashboard delivers **BTC buy/sell signals**, **live charts**, *
 
 ## 📁 File Structure
 
+btc-dashboard/
+├── app.py # Main dashboard code
+├── btc_dashboard_logic.py # Optional: Separated logic functions
+├── requirements.txt
+├── README.md
+└── .streamlit/
+└── config.toml
+
+
+
+👋 About the Creator
+Built by Moises Sanchez — a passionate software engineer with experience in operations, IT systems, and web development. This project is part of a larger portfolio of interactive, real-world tools.
+
+
+📬 Contact
+Have questions or want to collaborate?
+
+📧 Email: moysesray@yahoo.com
+🔗 GitHub: MoisesSanchez2020
+
+
+🪙 Disclaimer
+This dashboard is for educational purposes only. It does not provide financial advice or execute real trades.
+
