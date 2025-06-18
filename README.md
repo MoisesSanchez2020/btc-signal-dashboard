@@ -8,7 +8,7 @@ This interactive dashboard delivers **BTC buy/sell signals**, **live charts**, *
 
 ## 🚀 Live Demo
 
-🟢 [Click here to try the live app](https://share.streamlit.io/YOUR_APP_LINK)
+🟢 [Click here to try the live app](https://btc-signal-dashboard-mjzbtqux9dkpghrzrrwtru.streamlit.app/)
 
 ---
 
