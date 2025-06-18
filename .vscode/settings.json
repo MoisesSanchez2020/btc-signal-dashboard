@@ -8,9 +8,21 @@
     "javascript.suggest.includeAutomaticOptionalChainCompletions": false,
     "debug.saveBeforeStart": "none",
     "cSpell.words": [
+        "autoplay",
+        "Backtest",
+        "Backtesting",
+        "Backtests",
+        "hline",
+        "MACD",
         "plotly",
         "pycache",
+        "selectbox",
         "streamlit",
-        "venv"
+        "udcc",
+        "uddf",
+        "udfc",
+        "venv",
+        "xaxis",
+        "yaxis"
     ]
 }

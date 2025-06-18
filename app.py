@@ -5,10 +5,18 @@ import plotly.graph_objs as go
 import streamlit.components.v1 as components
 import time
 
+
+
+
 # Page config
 st.set_page_config(page_title="Bitcoin Signal Dashboard", layout="wide")
 st.title("📈 Bitcoin Signal Dashboard")
 st.subheader("Real-Time BTC Buy/Sell Signals (via CryptoCompare)")
+
+
+if "leaderboard" not in st.session_state:
+    st.session_state.leaderboard = []
+
 
 # Sidebar inputs
 st.sidebar.header("Settings")
@@ -328,6 +336,10 @@ if st.button("Run Backtest (last 7 days of 1h candles)"):
                 - **Total PnL:** `{total_pnl:.2f}%`
                 - **Win Rate:** `{win_rate:.1f}%`
                 """)
+                
+                
+                
+                
 
                 # Optional: CSV download
                 csv = df_trades.to_csv(index=False).encode("utf-8")
@@ -336,3 +348,77 @@ if st.button("Run Backtest (last 7 days of 1h candles)"):
                 st.warning("No trades were executed in the backtest.")
         except Exception as e:
             st.error(f"Error fetching historical data: {e}")
+
+# Save backtest summary to leaderboard
+st.session_state.leaderboard.append({
+    "Date": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+    "Total Trades": len(df_trades),
+    "Total PnL (%)": round(total_pnl, 2),
+    "Win Rate (%)": round(win_rate, 1)
+})
+
+
+st.markdown("### 🏆 Leaderboard - Best Backtests")
+
+if st.session_state.leaderboard:
+    df_lb = pd.DataFrame(st.session_state.leaderboard)
+    df_lb_sorted = df_lb.sort_values(by="Total PnL (%)", ascending=False)
+    st.dataframe(df_lb_sorted, use_container_width=True)
+
+    lb_csv = df_lb_sorted.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Download Leaderboard", lb_csv, file_name="leaderboard.csv", mime="text/csv")
+else:
+    st.info("No backtests recorded yet.")
+
+
+
+
+
+# Chart overlay with buy/sell signals
+fig_bt = go.Figure()
+
+# Price line
+fig_bt.add_trace(go.Scatter(
+    x=df_hist.index,
+    y=df_hist["close"],
+    mode="lines",
+    name="BTC Price",
+    line=dict(color="white")
+))
+
+# MAs
+fig_bt.add_trace(go.Scatter(x=df_hist.index, y=df_hist["short_ma"], mode="lines", name="Short MA"))
+fig_bt.add_trace(go.Scatter(x=df_hist.index, y=df_hist["long_ma"], mode="lines", name="Long MA"))
+
+# Entry/Exit Markers
+for trade in trades:
+    entry_color = "green" if trade["Side"] == "BUY" else "red"
+    fig_bt.add_trace(go.Scatter(
+        x=[trade["Open Time"]],
+        y=[trade["Entry"]],
+        mode="markers",
+        name=f"{trade['Side']} Entry",
+        marker=dict(size=10, color=entry_color, symbol="circle")
+    ))
+    fig_bt.add_trace(go.Scatter(
+        x=[trade["Close Time"]],
+        y=[trade["Exit"]],
+        mode="markers",
+        name="Exit",
+        marker=dict(size=8, color="gray", symbol="x")
+    ))
+
+fig_bt.update_layout(
+    title="Backtest Trade Overlay",
+    xaxis_title="Time",
+    yaxis_title="Price (USD)",
+    template="plotly_dark",
+    height=500
+)
+
+st.plotly_chart(fig_bt, use_container_width=True)
+
+
+if st.button("🧽 Reset Leaderboard"):
+    st.session_state.leaderboard = []
+    st.success("Leaderboard has been reset.")
