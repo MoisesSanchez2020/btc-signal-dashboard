@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objs as go
+import streamlit.components.v1 as components
 import time
 
 # Page config
@@ -9,18 +10,30 @@ st.set_page_config(page_title="Bitcoin Signal Dashboard", layout="wide")
 st.title("📈 Bitcoin Signal Dashboard")
 st.subheader("Real-Time BTC Buy/Sell Signals (via CryptoCompare)")
 
-
 # Sidebar inputs
 st.sidebar.header("Settings")
 short_window = st.sidebar.number_input("Short Window", min_value=2, value=5)
 long_window = st.sidebar.number_input("Long Window", min_value=3, value=15)
 refresh_rate = st.sidebar.number_input("Refresh Rate (sec)", min_value=5, value=10)
+enable_bot = st.sidebar.checkbox("🤖 Enable Auto-Bot Mode")
 
-# Store price history
+st.sidebar.markdown("### Risk Management")
+stop_loss_pct = st.sidebar.number_input("Stop Loss (%)", min_value=0.1, value=1.0)
+take_profit_pct = st.sidebar.number_input("Take Profit (%)", min_value=0.1, value=2.0)
+
+# Session state setup
 if "price_data" not in st.session_state:
     st.session_state.price_data = []
-price_data = st.session_state.price_data
+if "position" not in st.session_state:
+    st.session_state.position = None
+if "last_bot_action" not in st.session_state:
+    st.session_state.last_bot_action = None
+if "trade_log" not in st.session_state:
+    st.session_state.trade_log = []
+if "last_signal" not in st.session_state:
+    st.session_state.last_signal = None
 
+price_data = st.session_state.price_data
 
 # Fetch BTC price
 def get_btc_price():
@@ -34,7 +47,33 @@ def get_btc_price():
         st.warning(f"CryptoCompare API Error: {e}")
         return None
 
+# RSI Calculation
+def calculate_rsi(prices, window=14):
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
+# MACD Calculation
+def calculate_macd(prices, short_window=12, long_window=26, signal_window=9):
+    short_ema = prices.ewm(span=short_window, adjust=False).mean()
+    long_ema = prices.ewm(span=long_window, adjust=False).mean()
+    macd = short_ema - long_ema
+    signal = macd.ewm(span=signal_window, adjust=False).mean()
+    hist = macd - signal
+    return macd, signal, hist
+
+# Trade logging
+def log_trade(side, entry_price, exit_price, pnl_pct):
+    st.session_state.trade_log.append({
+        "Side": side,
+        "Entry Price": round(entry_price, 2),
+        "Exit Price": round(exit_price, 2),
+        "PnL (%)": round(pnl_pct, 2),
+        "Time": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
 
 # Get live price
 btc_price = get_btc_price()
@@ -45,7 +84,6 @@ if btc_price:
     st.write("DEBUG - Price Data Length:", len(price_data))
 
     if len(price_data) >= long_window:
-
         df = pd.DataFrame(price_data[-long_window:])
         prices = df["price"]
         short_ma = prices.rolling(short_window).mean()
@@ -58,11 +96,34 @@ if btc_price:
         elif short_ma.iloc[-1] < long_ma.iloc[-1]:
             signal = "📉 SELL"
 
-        # Display metrics
+        # Sound alert
+        if signal != st.session_state.last_signal:
+            if signal in ["📈 BUY", "📉 SELL"]:
+                sound_alert = """
+                <audio autoplay>
+                    <source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg">
+                </audio>
+                """
+                components.html(sound_alert)
+            st.session_state.last_signal = signal
+
+        # ✅ FIXED Auto-Bot Mode
+        already_in_trade = st.session_state.position is not None
+        side = "BUY" if signal == "📈 BUY" else "SELL"
+
+        if enable_bot and signal in ["📈 BUY", "📉 SELL"]:
+            if not already_in_trade or (st.session_state.position and st.session_state.position["side"] != side):
+                st.session_state.position = {
+                    "side": side,
+                    "entry_price": btc_price,
+                    "time": pd.Timestamp.now()
+                }
+                st.session_state.last_bot_action = f"{side} at ${btc_price:,.2f}"
+
         st.metric("BTC Price (USD)", f"${btc_price:,.2f}")
         st.markdown(f"### Signal: {signal}")
 
-        # Chart with time on x-axis
+        # Price Chart
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df["time"], y=prices, mode='lines+markers', name='BTC Price'))
         fig.add_trace(go.Scatter(x=df["time"], y=short_ma, mode='lines', name='Short MA'))
@@ -71,14 +132,122 @@ if btc_price:
             title="BTC Price with Moving Averages",
             xaxis_title="Time",
             yaxis_title="Price (USD)",
-            legend_title="Legend",
             template="plotly_dark"
         )
         st.plotly_chart(fig, use_container_width=True)
 
+        # RSI
+        rsi = calculate_rsi(prices, window=14)
+        fig_rsi = go.Figure()
+        fig_rsi.add_trace(go.Scatter(x=df["time"], y=rsi, mode='lines', name='RSI'))
+        fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
+        fig_rsi.add_hline(y=30, line_dash="dash", line_color="green")
+        fig_rsi.update_layout(
+            title="RSI (14-period)",
+            xaxis_title="Time",
+            yaxis_title="RSI Value",
+            template="plotly_dark",
+            height=300
+        )
+        st.plotly_chart(fig_rsi, use_container_width=True)
+
+        # MACD
+        macd, signal_line, hist = calculate_macd(prices)
+        fig_macd = go.Figure()
+        fig_macd.add_trace(go.Scatter(x=df["time"], y=macd, mode='lines', name='MACD'))
+        fig_macd.add_trace(go.Scatter(x=df["time"], y=signal_line, mode='lines', name='Signal Line'))
+        fig_macd.add_trace(go.Bar(x=df["time"], y=hist, name='Histogram'))
+        fig_macd.update_layout(
+            title="MACD (12-26-9)",
+            xaxis_title="Time",
+            yaxis_title="MACD Value",
+            template="plotly_dark",
+            height=300
+        )
+        st.plotly_chart(fig_macd, use_container_width=True)
+
+        # Simulated Trading
+        st.markdown("---")
+        st.subheader("🧪 Simulated Scalping Mode")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🟢 BUY", use_container_width=True):
+                st.session_state.position = {
+                    "side": "BUY",
+                    "entry_price": btc_price,
+                    "time": pd.Timestamp.now()
+                }
+        with col2:
+            if st.button("🔴 SELL", use_container_width=True):
+                st.session_state.position = {
+                    "side": "SELL",
+                    "entry_price": btc_price,
+                    "time": pd.Timestamp.now()
+                }
+        with col3:
+            if st.button("❌ Close Position", use_container_width=True):
+                st.session_state.position = None
+
+        if st.session_state.position:
+            pos = st.session_state.position
+            entry = pos["entry_price"]
+            side = pos["side"]
+            change_pct = ((btc_price - entry) / entry) * 100 if side == "BUY" else ((entry - btc_price) / entry) * 100
+            pnl_color = "green" if change_pct >= 0 else "red"
+
+            st.markdown(f"""
+            ### 📊 Active Trade
+            - **Side:** {side}
+            - **Entry Price:** ${entry:,.2f}
+            - **Current Price:** ${btc_price:,.2f}
+            - **Unrealized PnL:** <span style='color:{pnl_color}'>**{change_pct:.2f}%**</span>
+            """, unsafe_allow_html=True)
+
+            # SL/TP Auto Close
+            closed = False
+            reason = ""
+            if side == "BUY":
+                if change_pct <= -stop_loss_pct:
+                    reason = "🛑 Stop Loss"
+                    closed = True
+                elif change_pct >= take_profit_pct:
+                    reason = "🎯 Take Profit"
+                    closed = True
+            elif side == "SELL":
+                if change_pct <= -stop_loss_pct:
+                    reason = "🛑 Stop Loss"
+                    closed = True
+                elif change_pct >= take_profit_pct:
+                    reason = "🎯 Take Profit"
+                    closed = True
+
+            if closed:
+                log_trade(side, entry, btc_price, change_pct)
+                st.session_state.position = None
+                st.info(f"{reason} Triggered. Trade closed.")
+        else:
+            st.markdown("💤 _No open trade. Use the buttons above to start._")
+
+        if enable_bot and st.session_state.last_bot_action:
+            st.success(f"🤖 Auto-Bot Executed: {st.session_state.last_bot_action}")
+
+        # 📊 Trade History
+        if st.session_state.trade_log:
+            st.markdown("### 📜 Trade History")
+            df_log = pd.DataFrame(st.session_state.trade_log)
+            st.dataframe(df_log, use_container_width=True)
+
+            csv = df_log.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="⬇️ Download Trade History as CSV",
+                data=csv,
+                file_name='trade_history.csv',
+                mime='text/csv'
+            )
+
     else:
         st.info(f"Collecting data... Need at least {long_window} values.")
-
 else:
     st.error("Could not fetch BTC price.")
 
